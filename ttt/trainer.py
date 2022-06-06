@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from matplotlib import pyplot as plt
 from torch import optim, nn
 
 from ttt.network import DQN
@@ -26,13 +27,14 @@ class Trainer:
     """
 
     def __init__(self,
+                 dqn,
                  opponent: Player,
                  policy: Policy,
+                 replay_memory: ReplayMemory = None,
                  train_strategy: str = "vs-optimal",
                  n_games: int = 20_000,
                  target_update: int = 500,
                  batch_size: int = 64,
-                 replay_memory: ReplayMemory = None,
                  gamma: float = 0.99,
                  adam_lr: float = 0.0005,
                  huber_delta: float = 1.,
@@ -46,12 +48,13 @@ class Trainer:
 
         self.env = TictactoeEnv()
 
-        self.dqn = DQN(self.device).to(self.device)
+        self.dqn =dqn
         self.target_dqn = DQN(self.device).to(self.device)
         # load the main network weights to the target network
         self.target_dqn.load_state_dict(self.dqn.state_dict())
         self.optimizer = optim.Adam(self.dqn.parameters(), lr=adam_lr)
-        self.loss = nn.HuberLoss(delta=huber_delta)
+        self.huber_delta = huber_delta
+        self.criterion = nn.HuberLoss(delta=self.huber_delta)
 
         self.replay_memory = replay_memory
         self.opponent = opponent
@@ -96,8 +99,8 @@ class Trainer:
         if len(non_final_next_states) != 0:
             next_state_values[non_final_mask] = self.target_dqn(non_final_next_states).max(1)[0].detach()
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
-        criterion = nn.HuberLoss(delta=self.huber_delta)
-        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+
+        loss = self.criterion(state_action_values, expected_state_action_values.unsqueeze(1))
         self.optimizer.zero_grad()
         loss.backward()
         self.clip_gradient()
@@ -128,7 +131,7 @@ class Trainer:
                 action_t = players_order[current_player].act(self.env.grid, n=0)
 
                 if self.env.check_valid(action_t):
-                    new_gird, is_final, winner = self.env.step(action_t)
+                    new_grid, is_final, winner = self.env.step(action_t)
                     reward_t = self.env.reward(player=self.agent.player)
 
                 else:
@@ -136,7 +139,7 @@ class Trainer:
                     is_final = True
                     reward_t = -1
 
-                new_state = represent_gird_as_state(new_gird, self.agent.player, self.device)
+                new_state = represent_gird_as_state(new_grid, self.agent.player, self.device)
                 # collect the data only for the agent not the optimal player
                 if players_order[current_player] is self.agent:
                     self.replay_memory.push(state_t.numpy(), from_tuple_to_int(action_t), reward_t, new_state.numpy(),
@@ -148,7 +151,6 @@ class Trainer:
                 if is_final:
                     break
         pbar.close()
-
 
     def training_loop(self, optimize=True):
         for ith_game in tqdm(range(self.n_games)):
@@ -179,7 +181,7 @@ class Trainer:
                                             is_final)
                     self.current_avg_reward_list.append(reward_t)
                     loss = self.optimize_model()
-                    self.current_avg_loss_list.append(loss)
+                    self.current_avg_loss_list.append(loss.clone().detach().numpy())
 
                 if is_final:
                     break
@@ -196,3 +198,21 @@ class Trainer:
 
                 self.m_opt.append(compute_m_opt(self.agent))
                 self.m_rand.append(compute_m_rand(self.agent))
+
+
+    def plot_avg_loss_reward(self):
+        f, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 9))
+        f.suptitle("Every 250 games average reward and loss", fontsize=16)
+        ax1.set_title("Average reward")
+        ax2.set_title("Average loss")
+        ax1.plot(list(range(len(self.avg_rewards_list))), self.avg_rewards_list)
+        ax2.plot(list(range(len(self.avg_loss_list))), self.avg_loss_list)
+
+
+    def plot_m_metrics(self):
+        f, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 9))
+        f.suptitle("Every 250 games M_rand and M_opt", fontsize=16)
+        ax1.set_title("M rand")
+        ax2.set_title("M opt")
+        ax1.plot(list(range(len(self.m_opt))), self.m_opt)
+        ax2.plot(list(range(len(self.m_rand))), self.m_rand)
