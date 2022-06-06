@@ -51,6 +51,7 @@ class SelfPracticeTrainer:
         self.target_dqn = DQN(self.device).to(self.device)
         # load the main network weights to the target network
         self.target_dqn.load_state_dict(self.dqn.state_dict())
+        self.target_dqn.eval()
         self.optimizer = optim.Adam(self.dqn.parameters(), lr=adam_lr)
         self.huber_delta = huber_delta
         self.criterion = nn.HuberLoss(delta=self.huber_delta)
@@ -78,23 +79,17 @@ class SelfPracticeTrainer:
         players_order[1].player = "O"
         return players_order
 
-    # def init_avg_lists(self):
-    #     self.avg_rewards_list = []
-    #     self.current_avg_reward_list = []
-    #     self.avg_loss_list = []
-    #     self.current_avg_loss_list = []
-
     def optimize_model(self):
         transitions = self.replay_memory.sample(self.batch_size)
         batch = Transition(*zip(*transitions))
-        non_final_mask = torch.tensor(~np.array(batch.is_final))
-        state_batch = torch.tensor(batch.state)
-        reward_batch = torch.tensor(batch.reward)
-        action_batch = torch.tensor(batch.action, device=self.device).reshape(-1, 1)
+        non_final_mask = torch.from_numpy(~np.array(batch.is_final))
+        state_batch = torch.from_numpy(np.array(batch.state))
+        reward_batch = torch.from_numpy(np.array(batch.reward))
+        action_batch = torch.from_numpy(np.array(batch.action).reshape(-1, 1))
         state_action_values = self.dqn(state_batch).gather(1, action_batch)
         next_state_values = torch.zeros(self.batch_size, device=self.device)
-        non_final_next_states = torch.tensor(
-            [n_s for n_s, is_f in zip(batch.next_state, batch.is_final) if is_f is False], device=self.device)
+        non_final_next_states = torch.from_numpy(
+            np.array([n_s for n_s, is_f in zip(batch.next_state, batch.is_final) if is_f is False]))
         if len(non_final_next_states) != 0:
             next_state_values[non_final_mask] = self.target_dqn(non_final_next_states).max(1)[0].detach()
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
@@ -195,7 +190,7 @@ class SelfPracticeTrainer:
                 self.current_avg_reward_list = []
                 # save the average loss of the last 250 games
                 self.avg_loss_list.append(sum(self.current_avg_loss_list) / len(self.current_avg_loss_list))
-                current_avg_loss_list = []
+                self.current_avg_loss_list = []
 
                 self.m_opt.append(compute_m_opt(self.agent))
                 self.m_rand.append(compute_m_rand(self.agent))
