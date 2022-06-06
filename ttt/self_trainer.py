@@ -162,7 +162,7 @@ class SelfPracticeTrainer(AbstractTrainer):
 
 
 
-                if len(self.replay_memory) == self.replay_memory.init_size and still_mem_init_phase:
+                if len(self.replay_memory) >= self.replay_memory.init_size and still_mem_init_phase:
                     logger.info("Initialize Replay Memory: Done")
                     logger.info("Training Loop: Start")
                     game_number = 0
