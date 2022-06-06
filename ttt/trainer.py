@@ -106,7 +106,7 @@ class Trainer:
             param.grad.data.clamp_(-1, 1)
 
     def main_loop(self, calculate_ms=True):
-        # it differs from the main phase by optimization and  metrics calculations
+        # in the still_mem_init_phase there is no optimization neither metrics calculations
         still_mem_init_phase = True
         logger.info("Initialize Replay Memory: Started")
         game_number = -1
